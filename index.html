@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Bateman's Ledger</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;min-height:100vh;background:radial-gradient(ellipse at 50% 40%,#0e0b05 0%,#050402 70%);color:#c8a84a;font-family:'Georgia','Times New Roman',serif;overflow-x:hidden}
+body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:2rem 1rem;min-height:100vh}
+.scene{display:flex;flex-direction:column;align-items:center;gap:1.4rem;width:100%;max-width:420px;position:relative}
+
+.page{width:100%;display:flex;flex-direction:column;align-items:center;gap:1.4rem;transition:opacity .5s cubic-bezier(.23,1,.32,1),transform .5s cubic-bezier(.23,1,.32,1)}
+.page.hidden{opacity:0;transform:translateY(20px);pointer-events:none;position:absolute;top:0;left:0;right:0}
+
+/* ============ CARD ============ */
+.card-wrap{perspective:1400px;width:100%;max-width:380px;aspect-ratio:380/260;cursor:pointer;user-select:none}
+.card-inner{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform 1s cubic-bezier(.23,1,.32,1)}
+.card-wrap.flipped .card-inner{transform:rotateY(180deg)}
+.card-face{position:absolute;top:0;left:0;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:3px;background:linear-gradient(150deg,#100d07 0%,#0a0804 100%);border:0.5px solid #2a2418;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.6),inset 0 1px 0 rgba(212,176,80,0.04)}
+.card-front{transform:translateZ(0)}
+.card-back{transform:rotateY(180deg) translateZ(0)}
+.card-face::after{content:'';position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(105deg,transparent,rgba(232,196,96,0.05),transparent);transform:skewX(-18deg);animation:sheen 7s ease-in-out infinite;pointer-events:none}
+@keyframes sheen{0%,75%{left:-60%}88%,100%{left:130%}}
+
+/* intro reveal — elements fade/draw in once */
+.intro .card-face::after{animation-play-state:paused}
+.reveal-el{opacity:0}
+.intro-done .reveal-el{opacity:1;transition:opacity 1s ease}
+.f-rule{height:0.5px;background:linear-gradient(90deg,transparent,#5a4a18,transparent);width:230px;transform:scaleX(0);transform-origin:center}
+.intro-done .f-rule{transform:scaleX(1);transition:transform 1.1s cubic-bezier(.23,1,.32,1)}
+
+.corner{position:absolute;font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;color:#6a6038;line-height:1.6;z-index:2}
+.corner-tl{top:18px;left:24px}.corner-tr{top:18px;right:24px;text-align:right}
+.corner-bl{bottom:18px;left:24px}.corner-br{bottom:18px;right:24px;text-align:right}
+
+.f-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;white-space:nowrap;z-index:1}
+.f-tag{font-size:17px;letter-spacing:.2em;color:#d4b050;text-transform:uppercase;text-shadow:0 0 14px rgba(212,176,80,0.18)}
+.f-name{font-size:9.5px;letter-spacing:.26em;color:#a09060;text-transform:uppercase}
+.f-title{font-size:8px;letter-spacing:.28em;color:#7a6840;text-transform:uppercase}
+
+.indicator{display:flex;align-items:center;gap:5px;background:transparent!important;border:none!important;outline:none!important;box-shadow:none!important;-webkit-appearance:none!important;appearance:none!important;cursor:default;padding:0;margin:0;font-family:'Georgia',serif}
+.indicator.admin{cursor:pointer}
+.indicator:focus,.indicator:focus-visible,.indicator:active{outline:none!important;box-shadow:none!important;border:none!important}
+.indicator-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;transition:background .4s,box-shadow .4s,transform .4s}
+.indicator-label{font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;transition:color .4s}
+.indicator-dot.online{background:#4a8a4a;animation:greenGlow 2.6s ease-in-out infinite}
+@keyframes greenGlow{0%,100%{background:#2a6a2a;box-shadow:0 0 4px rgba(74,138,74,0.4);opacity:.75;transform:scale(1)}50%{background:#7acc7a;box-shadow:0 0 10px rgba(122,204,122,0.85),0 0 18px rgba(74,138,74,0.4);opacity:1;transform:scale(1.25)}}
+.indicator-dot.offline{background:#6a1818;animation:redBlink 1.5s ease-in-out infinite}
+@keyframes redBlink{0%,100%{background:#3a0e0e;box-shadow:0 0 3px rgba(180,30,30,0.3);opacity:.35;transform:scale(1)}45%,55%{background:#e84a4a;box-shadow:0 0 12px rgba(232,80,80,0.95),0 0 20px rgba(180,30,30,0.5);opacity:1;transform:scale(1.3)}}
+.indicator-label.online{color:#6a8a6a}.indicator-label.offline{color:#a04040}
+.indicator-dot.lang{background:#a08440;animation:langPulse 2.4s ease-in-out infinite}
+@keyframes langPulse{0%,100%{background:#5a4218;box-shadow:0 0 3px rgba(160,132,64,0.3);opacity:.65;transform:scale(.9)}50%{background:#f8e498;box-shadow:0 0 10px rgba(248,228,152,0.95),0 0 18px rgba(212,176,80,0.45);opacity:1;transform:scale(1.3)}}
+.indicator-label.lang{color:#8a7438}
+.indicator.lang-btn{cursor:pointer}
+.indicator.lang-btn:hover .indicator-dot.lang,.indicator.lang-btn:active .indicator-dot.lang{background:#fff0a8!important;box-shadow:0 0 12px rgba(255,240,168,0.9)!important}
+.indicator.lang-btn:hover .indicator-label.lang,.indicator.lang-btn:active .indicator-label.lang{color:#e8c460}
+.admin-mark{font-size:6px;color:#6a5828;margin-left:3px;opacity:0;transition:opacity .4s}
+.indicator.admin .admin-mark{opacity:.8}
+
+.b-header{position:absolute;top:60px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:7px;z-index:1}
+.b-wordmark{font-size:15px;letter-spacing:.34em;font-style:italic;text-transform:uppercase;position:relative;padding:0 22px;background:linear-gradient(110deg,#5a3818 0%,#a07828 18%,#d4b050 38%,#f8e498 50%,#d4b050 62%,#a07828 82%,#5a3818 100%);background-size:280% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 8px rgba(212,176,80,0.25));animation:goldFlow 4.5s ease-in-out infinite}
+@keyframes goldFlow{0%,100%{background-position:100% 50%}50%{background-position:0% 50%}}
+.b-wordmark::before,.b-wordmark::after{content:'◆';position:absolute;top:50%;transform:translateY(-50%);font-size:5px;color:#7a6028;font-style:normal;-webkit-text-fill-color:#7a6028;background:none}
+.b-wordmark::before{left:0}.b-wordmark::after{right:0}
+.b-sub{font-size:7px;letter-spacing:.5em;text-transform:uppercase;font-style:italic;padding-left:.5em;background:linear-gradient(110deg,#6a4a20 0%,#a8853a 25%,#f8e498 50%,#a8853a 75%,#6a4a20 100%);background-size:320% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 4px rgba(212,176,80,0.15));animation:goldFlowSub 3.8s ease-in-out infinite;animation-delay:-1s}
+@keyframes goldFlowSub{0%,100%{background-position:100% 50%}50%{background-position:0% 50%}}
+
+.menu-list{position:absolute;top:140px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:2}
+.menu-item{display:flex;align-items:center;justify-content:center;gap:14px;padding:6px 0;font-family:'Georgia',serif;font-size:9.5px;letter-spacing:.34em;color:#d8c898;text-transform:uppercase;background:transparent;border:none;outline:none;cursor:pointer;width:280px;transition:color .55s,letter-spacing .55s,gap .55s}
+.menu-item:focus,.menu-item:focus-visible{outline:none}
+.menu-item .line{flex:1;max-width:35px;height:0.5px;transition:max-width .55s,background .55s}
+.menu-item .line.l{background:linear-gradient(90deg,transparent,#5a4a18)}
+.menu-item .line.r{background:linear-gradient(90deg,#5a4a18,transparent)}
+.menu-item:hover,.menu-item:active{color:#fff0c8;letter-spacing:.42em;gap:18px}
+.menu-item:hover .line,.menu-item:active .line{max-width:60px}
+.menu-item:hover .line.l,.menu-item:active .line.l{background:linear-gradient(90deg,transparent,#d4b050)}
+.menu-item:hover .line.r,.menu-item:active .line.r{background:linear-gradient(90deg,#d4b050,transparent)}
+.item-label{position:relative;display:inline-block}
+.item-label::after{content:'';position:absolute;left:50%;bottom:-3px;width:0;height:0.5px;background:#d4b050;transition:width .55s,left .55s}
+.menu-item:hover .item-label::after,.menu-item:active .item-label::after{width:100%;left:0}
+
+.hint{font-size:10px;color:#7a7040;letter-spacing:.14em;font-style:italic;min-height:18px;transition:opacity .6s;text-align:center}
+
+/* ============ SERVICES ============ */
+.services-wrap{width:100%;max-width:380px;display:flex;flex-direction:column;gap:14px}
+.svc-topbar{display:flex;align-items:center;justify-content:space-between;padding:0 2px;margin-bottom:4px}
+.svc-back{background:transparent;border:0;outline:0;cursor:pointer;font-family:'Georgia',serif;font-size:8px;letter-spacing:.36em;color:#8a7438;text-transform:uppercase;font-style:italic;padding:6px 4px;transition:color .4s,letter-spacing .4s}
+.svc-back:hover,.svc-back:active{color:#e8c460;letter-spacing:.44em}
+.svc-back-arrow{display:inline-block;margin-right:6px;transition:transform .4s}
+.svc-back:hover .svc-back-arrow,.svc-back:active .svc-back-arrow{transform:translateX(-3px)}
+.svc-header{text-align:center;padding:8px 0 12px;border-bottom:0.5px solid #2a2418}
+.svc-title{font-size:18px;letter-spacing:.4em;font-style:italic;text-transform:uppercase;background:linear-gradient(110deg,#5a3818 0%,#a07828 18%,#d4b050 38%,#f8e498 50%,#d4b050 62%,#a07828 82%,#5a3818 100%);background-size:280% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 8px rgba(212,176,80,0.25));animation:goldFlow 4.5s ease-in-out infinite;padding-left:.4em}
+.svc-subtitle{font-size:8px;letter-spacing:.5em;text-transform:uppercase;font-style:italic;margin-top:6px;padding-left:.5em;background:linear-gradient(110deg,#5a4218 0%,#9a7a32 25%,#f8e498 50%,#9a7a32 75%,#5a4218 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:goldFlowSub 4s ease-in-out infinite;animation-delay:-.5s}
+.svc-list{position:relative;display:flex;flex-direction:column;gap:1px;background:#1a140a;border:0.5px solid #2a2418;border-radius:3px;overflow:hidden;box-shadow:0 0 0 0 rgba(212,176,80,0);animation:listGlow 5s ease-in-out infinite}
+@keyframes listGlow{0%,100%{box-shadow:inset 0 0 18px rgba(212,176,80,0.03),0 0 0 0.5px rgba(90,74,24,0.3)}50%{box-shadow:inset 0 0 22px rgba(212,176,80,0.07),0 0 0 0.5px rgba(160,128,48,0.5)}}
+.svc-list::before{content:'';position:absolute;top:0;left:-70%;width:55%;height:100%;background:linear-gradient(105deg,transparent,rgba(232,196,96,0.07),rgba(248,228,152,0.11),rgba(232,196,96,0.07),transparent);transform:skewX(-18deg);animation:seqSheenBlock 14s ease-in-out infinite;pointer-events:none;z-index:3}
+@keyframes seqSheenBlock{0%{left:-70%}16%{left:160%}17%,100%{left:160%}}
+.svc-item{position:relative;z-index:1;padding:16px 18px;background:linear-gradient(150deg,#100d07,#0a0804);transition:background .4s;border-left:2px solid transparent}
+.svc-item:hover,.svc-item:active{background:linear-gradient(150deg,#1a1208,#0e0a04);border-left-color:#d4b050}
+.svc-item-name{font-size:11px;letter-spacing:.3em;color:#ecdcac;text-transform:uppercase;font-family:'Georgia',serif}
+.svc-item-desc{font-size:11px;letter-spacing:.02em;color:#c0ac82;margin-top:7px;font-style:italic;line-height:1.65}
+.svc-item-meta{display:flex;justify-content:flex-end;margin-top:8px}
+.svc-item-price{font-size:8px;letter-spacing:.3em;color:#9a8450;text-transform:uppercase;font-style:italic}
+
+.svc-actions{display:flex;flex-direction:column;gap:9px;margin-top:8px}
+.svc-btn{display:block;text-align:center;padding:14px;border-radius:3px;font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;font-family:'Georgia',serif;cursor:pointer;text-decoration:none;transition:border-color .5s,color .5s,box-shadow .5s,letter-spacing .5s;position:relative;overflow:hidden}
+.svc-btn-primary{background:linear-gradient(150deg,#1a1208,#100c06);border:0.5px solid #5a4218;color:#d4b050}
+.svc-btn-primary::after{content:'';position:absolute;top:0;left:-70%;width:50%;height:100%;background:linear-gradient(105deg,transparent,rgba(248,228,152,0.14),transparent);transform:skewX(-18deg);animation:seqSheenQuote 14s ease-in-out infinite;pointer-events:none}
+@keyframes seqSheenQuote{0%,32%{left:-70%}48%{left:170%}49%,100%{left:170%}}
+.svc-btn-primary:hover,.svc-btn-primary:active{border-color:#d4b050;color:#f8e498;box-shadow:0 0 14px rgba(212,176,80,0.25);letter-spacing:.36em}
+.svc-btn-ghost{position:relative;background:transparent;border:0.5px solid #2a2418;color:#8a7440;overflow:hidden}
+.svc-btn-ghost::after{content:'';position:absolute;top:0;left:-70%;width:50%;height:100%;background:linear-gradient(105deg,transparent,rgba(248,228,152,0.1),transparent);transform:skewX(-18deg);animation:seqSheenContact 14s ease-in-out infinite;pointer-events:none}
+@keyframes seqSheenContact{0%,56%{left:-70%}72%{left:170%}73%,100%{left:170%}}
+.svc-btn-ghost:hover,.svc-btn-ghost:active{border-color:#5a4218;color:#c8a84a;letter-spacing:.36em}
+.svc-btn-arrow{display:inline-block;margin-left:8px;transition:transform .4s}
+.svc-btn:hover .svc-btn-arrow,.svc-btn:active .svc-btn-arrow{transform:translateX(4px)}
+.svc-footer{text-align:center;font-size:6.5px;letter-spacing:.4em;color:#4a4028;text-transform:uppercase;font-style:italic;margin-top:6px;opacity:0.6}
+
+/* ============ QUOTE FORM (modal) ============ */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,4,2,0.86);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:1.4rem;z-index:100;opacity:0;pointer-events:none;transition:opacity .4s}
+.modal-overlay.open{opacity:1;pointer-events:auto}
+.modal{width:100%;max-width:360px;background:linear-gradient(150deg,#120e08,#0a0804);border:0.5px solid #3a2e18;border-radius:4px;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);transform:translateY(16px) scale(0.98);transition:transform .4s cubic-bezier(.23,1,.32,1);max-height:90vh;overflow-y:auto}
+.modal-overlay.open .modal{transform:translateY(0) scale(1)}
+.modal-title{font-size:13px;letter-spacing:.32em;font-style:italic;text-transform:uppercase;text-align:center;background:linear-gradient(110deg,#a07828,#f8e498,#a07828);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:goldFlow 4s ease-in-out infinite;margin-bottom:5px;padding-left:.32em}
+.modal-sub{font-size:7px;letter-spacing:.4em;color:#6a5830;text-transform:uppercase;font-style:italic;text-align:center;margin-bottom:18px}
+.field{margin-bottom:13px}
+.field-label{font-size:7.5px;letter-spacing:.26em;color:#8a7440;text-transform:uppercase;margin-bottom:6px;display:block;font-style:italic}
+.field-input,.field-select,.field-textarea{width:100%;background:#0a0804;border:0.5px solid #2e2618;border-radius:2px;padding:10px 12px;color:#d8c898;font-family:'Georgia',serif;font-size:11px;letter-spacing:.04em;outline:none;transition:border-color .4s}
+.field-input:focus,.field-select:focus,.field-textarea:focus{border-color:#7a6028}
+.field-textarea{resize:vertical;min-height:64px;line-height:1.5}
+.field-select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7440' fill='none' stroke-width='1'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.field-select option{background:#0a0804;color:#d8c898}
+.modal-actions{display:flex;gap:9px;margin-top:18px}
+.modal-btn{flex:1;text-align:center;padding:12px;border-radius:2px;font-size:9px;letter-spacing:.26em;text-transform:uppercase;font-family:'Georgia',serif;cursor:pointer;border:0.5px solid;outline:none;transition:all .4s;background:transparent}
+.modal-btn-cancel{border-color:#2e2618;color:#6a5a3a}
+.modal-btn-cancel:hover,.modal-btn-cancel:active{border-color:#4a3e22;color:#9a8458}
+.modal-btn-send{border-color:#5a4218;color:#d4b050;background:linear-gradient(150deg,#1a1208,#120c06)}
+.modal-btn-send:hover,.modal-btn-send:active{border-color:#d4b050;color:#f8e498;box-shadow:0 0 12px rgba(212,176,80,0.2)}
+.modal-note{font-size:9px;letter-spacing:.12em;text-align:center;margin-top:15px;font-style:italic;line-height:1.6;background:linear-gradient(110deg,#6a4a20 0%,#a8853a 25%,#f8e498 50%,#a8853a 75%,#6a4a20 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:goldFlowSub 4s ease-in-out infinite}
+
+/* ============ TOAST (copied notification) ============ */
+.toast{position:fixed;left:50%;bottom:42px;transform:translateX(-50%) translateY(20px);z-index:200;background:linear-gradient(150deg,#1a1408,#0e0a04);border:0.5px solid #5a4218;border-radius:3px;padding:12px 22px;display:flex;align-items:center;gap:9px;box-shadow:0 10px 36px rgba(0,0,0,0.7),0 0 18px rgba(212,176,80,0.12);opacity:0;pointer-events:none;transition:opacity .4s ease,transform .4s cubic-bezier(.23,1,.32,1);max-width:88%}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast-check{width:15px;height:15px;flex-shrink:0;border-radius:50%;border:0.5px solid #d4b050;display:flex;align-items:center;justify-content:center;position:relative}
+.toast-check::after{content:'';width:4px;height:7px;border:solid #f8e498;border-width:0 1px 1px 0;transform:rotate(45deg) translateY(-1px);box-shadow:0 0 4px rgba(248,228,152,0.4)}
+.toast-text{font-family:'Georgia',serif;font-size:9px;letter-spacing:.16em;color:#e8d8a8;text-transform:uppercase;font-style:italic;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="scene">
+
+  <!-- ===== PAGE 1: CARD ===== -->
+  <div class="page" id="page-card">
+    <div class="card-wrap intro" id="cardWrap" onclick="flipCard()">
+      <div class="card-inner">
+        <div class="card-face card-front">
+          <div class="corner corner-tl reveal-el" id="ftl">Pierce &amp; Pierce<br>Mergers &amp; Acquisitions</div>
+          <div class="corner corner-tr reveal-el" id="ftr">New York<br>10022</div>
+          <div class="corner corner-bl reveal-el" id="fbl">Wall Street</div>
+          <div class="corner corner-br reveal-el" id="fbr">Service</div>
+          <div class="f-center">
+            <div class="f-rule"></div>
+            <div class="f-tag reveal-el">@BatemansLedger</div>
+            <div class="f-name reveal-el" id="fname">Patrick Bateman</div>
+            <div class="f-title reveal-el" id="ftitle">Vice President</div>
+            <div class="f-rule"></div>
+          </div>
+        </div>
+        <div class="card-face card-back">
+          <div class="corner corner-tl">
+            <button class="indicator status-btn" id="statusBtn" onclick="onStatusClick(event)">
+              <div class="indicator-dot online" id="statusDot"></div>
+              <span class="indicator-label online" id="statusLabel">Online</span>
+              <span class="admin-mark" id="adminMark">✎</span>
+            </button>
+          </div>
+          <div class="corner corner-tr">
+            <button class="indicator lang-btn" onclick="toggleLang(event)">
+              <div class="indicator-dot lang"></div>
+              <span class="indicator-label lang" id="langText">ENG</span>
+            </button>
+          </div>
+          <div class="b-header">
+            <div class="b-wordmark">Bateman's Ledger</div>
+            <div class="b-sub" id="btagline">Private Members Club</div>
+          </div>
+          <div class="menu-list">
+            <button class="menu-item" onclick="openSection('reviews',event)"><span class="line l"></span><span class="item-label" id="m1">Reviews</span><span class="line r"></span></button>
+            <button class="menu-item" onclick="openSection('ledger',event)"><span class="line l"></span><span class="item-label" id="m2">The Ledger</span><span class="line r"></span></button>
+            <button class="menu-item" onclick="openSection('services',event)"><span class="line l"></span><span class="item-label" id="m3">Services</span><span class="line r"></span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="hint" id="hint">tap the card</div>
+  </div>
+
+  <!-- ===== PAGE 2: SERVICES ===== -->
+  <div class="page hidden" id="page-services">
+    <div class="services-wrap">
+      <div class="svc-topbar">
+        <button class="svc-back" onclick="goBack()"><span class="svc-back-arrow">←</span><span id="svcBackText">back</span></button>
+        <button class="indicator lang-btn" onclick="toggleLang(event)" style="margin:0">
+          <div class="indicator-dot lang"></div>
+          <span class="indicator-label lang" id="langText2">ENG</span>
+        </button>
+      </div>
+      <div class="svc-header">
+        <div class="svc-title" id="svcTitle">Services</div>
+        <div class="svc-subtitle" id="svcSubtitle">What I Do</div>
+      </div>
+      <div class="svc-list" id="svcList"></div>
+      <div class="svc-actions">
+        <a class="svc-btn svc-btn-primary" id="svcQuote"><span id="svcQuoteText">Request a Quote</span><span class="svc-btn-arrow">→</span></a>
+        <a class="svc-btn svc-btn-ghost" id="svcContact"><span id="svcContactText">Contact Bateman</span><span class="svc-btn-arrow">→</span></a>
+      </div>
+      <div class="svc-footer" id="svcFooter">Anno MMXXIV</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== QUOTE FORM MODAL ===== -->
+<div class="modal-overlay" id="quoteModal">
+  <div class="modal">
+    <div class="modal-title" id="qTitle">Request a Quote</div>
+    <div class="modal-sub" id="qSub">Tell me what you need</div>
+    <div class="field">
+      <label class="field-label" id="qServiceLabel">Service</label>
+      <select class="field-select" id="qService"></select>
+    </div>
+    <div class="field">
+      <label class="field-label" id="qTimelineLabel">Timeline</label>
+      <select class="field-select" id="qTimeline"></select>
+    </div>
+    <div class="field">
+      <label class="field-label" id="qBudgetLabel">Budget</label>
+      <input class="field-input" id="qBudget" type="text">
+    </div>
+    <div class="field">
+      <label class="field-label" id="qDescLabel">Description</label>
+      <textarea class="field-textarea" id="qDesc"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" id="qCancel" onclick="closeQuote()">Cancel</button>
+      <button class="modal-btn modal-btn-send" id="qSend" onclick="sendQuote()">Send</button>
+    </div>
+    <div class="modal-note" id="qNote">Your brief will be copied and my chat will open. Paste &amp; send.</div>
+  </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div class="toast" id="toast">
+  <div class="toast-check"></div>
+  <div class="toast-text" id="toastText">Copied</div>
+</div>
+
+<script>
+/* =========================================================
+   КОНФИГ — МЕНЯЙ ЗДЕСЬ
+   ========================================================= */
+
+// ССЫЛКИ
+var LINKS = {
+  reviews:  'https://t.me/Floki4050',
+  ledger:   'https://t.me/Floki4045',
+  contact:  'https://t.me/BatemansLedger'
+};
+
+// АДМИНЫ (Telegram ID). Добавляй новых через запятую: [8486407759, 111, 222]
+var ADMIN_IDS = [8486407759];
+
+// СТАТУС (Gist URL; пусто = всегда Online до этапа с ботом)
+var STATUS_URL = '';
+
+// УСЛУГИ
+var SERVICES = [
+  { nameEn:'Tax Management', nameRu:'Налоговый учёт',
+    descEn:'Everything in order. On paper.',
+    descRu:'Всё в порядке. На бумаге.' },
+  { nameEn:'Development', nameRu:'Разработка',
+    descEn:'Frontend, backend, sites, web apps. Turnkey.',
+    descRu:'Фронтенд, бэкенд, сайты, веб-приложения. Под ключ.' },
+  { nameEn:'Telegram Bots & Apps', nameRu:'Боты и мини-аппы',
+    descEn:'Bots, mini-apps, automation. Any complexity.',
+    descRu:'Боты, мини-аппы, автоматизация. Любая сложность.' },
+  { nameEn:'Other', nameRu:'Другое',
+    descEn:'Sales, PDF papers, design, avatars, bespoke tasks, presentations. Just ask.',
+    descRu:'Продажи, PDF-документы, дизайн, аватарки, индивидуальные задачи, презентации. Просто спроси.' }
+];
+
+// ВСЕ НАДПИСИ
+var L = {
+  eng:{
+    fname:'Patrick Bateman', ftitle:'Vice President',
+    ftl:'Pierce & Pierce<br>Mergers & Acquisitions', ftr:'New York<br>10022',
+    fbl:'Wall Street', fbr:'Service',
+    btagline:'Private Members Club',
+    m1:'Reviews', m2:'The Ledger', m3:'Services',
+    online:'Online', offline:'Offline', lang:'ENG',
+    hint1:'tap the card', hintLang:'tap the dot to switch language',
+    svcTitle:'Services', svcSubtitle:'What I Do', svcBack:'back',
+    svcQuote:'Request a Quote', svcContact:'Contact Bateman',
+    svcPrice:'By request', svcFooter:'Anno MMXXIV',
+    qTitle:'Request a Quote', qSub:'Tell me what you need',
+    qServiceLabel:'Service', qTimelineLabel:'Timeline', qBudgetLabel:'Budget', qDescLabel:'Description',
+    qCancel:'Cancel', qSend:'Send',
+    qNote:'Your brief will be copied and my chat will open. Paste & send.',
+    qBudgetPlaceholder:'e.g. negotiable / $200 / TBD',
+    qDescPlaceholder:'Describe your task in a few words…',
+    otherOption:'Other',
+    timelines:['ASAP','1–3 hours','12 hours','1 week','Flexible'],
+    briefHeader:'QUOTE REQUEST', briefService:'Service', briefTimeline:'Timeline', briefBudget:'Budget', briefDesc:'Details',
+    copied:'Brief copied. Opening chat — paste & send.',
+    copiedShort:'Copied to clipboard'
+  },
+  rus:{
+    fname:'Патрик Бейтмен', ftitle:'Вице-Президент',
+    ftl:'Pierce & Pierce<br>Слияния и Поглощения', ftr:'Нью-Йорк<br>10022',
+    fbl:'Уолл-Стрит', fbr:'Сервис',
+    btagline:'Закрытый Клуб',
+    m1:'Отзывы', m2:'Объявления', m3:'Услуги',
+    online:'Я тут', offline:'Офф', lang:'РУС',
+    hint1:'нажми на визитку', hintLang:'нажми на точку чтобы сменить язык',
+    svcTitle:'Услуги', svcSubtitle:'Что я делаю', svcBack:'назад',
+    svcQuote:'Получить расчёт', svcContact:'Написать мне',
+    svcPrice:'По запросу', svcFooter:'Anno MMXXIV',
+    qTitle:'Получить расчёт', qSub:'Расскажи что нужно',
+    qServiceLabel:'Услуга', qTimelineLabel:'Срок', qBudgetLabel:'Бюджет', qDescLabel:'Описание',
+    qCancel:'Отмена', qSend:'Отправить',
+    qNote:'Бриф скопируется, откроется мой чат. Вставь и отправь.',
+    qBudgetPlaceholder:'напр. обсуждаемо / 15000₽ / TBD',
+    qDescPlaceholder:'Опиши задачу в двух словах…',
+    otherOption:'Другое',
+    timelines:['Срочно','1–3 часа','12 часов','Неделя','Гибко'],
+    briefHeader:'ЗАЯВКА НА РАСЧЁТ', briefService:'Услуга', briefTimeline:'Срок', briefBudget:'Бюджет', briefDesc:'Детали',
+    copied:'Бриф скопирован. Открываю чат — вставь и отправь.',
+    copiedShort:'Скопировано в буфер'
+  }
+};
+
+/* =========================================================
+   ↓ ЛОГИКА — НЕ МЕНЯЙ БЕЗ НУЖДЫ
+   ========================================================= */
+var tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+if(tg){ tg.ready(); tg.expand(); tg.setHeaderColor('#050402'); tg.setBackgroundColor('#050402'); }
+
+function haptic(type){
+  if(!tg) return;
+  try{
+    if(type==='select') tg.HapticFeedback.selectionChanged();
+    else tg.HapticFeedback.impactOccurred(type||'light');
+  }catch(e){}
+}
+
+// ADMIN CHECK
+var isAdmin = false;
+try{
+  if(tg && tg.initDataUnsafe && tg.initDataUnsafe.user){
+    isAdmin = ADMIN_IDS.indexOf(tg.initDataUnsafe.user.id) !== -1;
+  }
+}catch(e){}
+
+// STATE
+var flipped=false, lang='eng', status='online', currentPage='card';
+var hintEl=document.getElementById('hint');
+
+// SEEN MEMORY (14 days)
+var SEEN_KEY='bl_seen_v1';
+function getSeen(){ try{ var r=localStorage.getItem(SEEN_KEY); if(!r) return {}; var o=JSON.parse(r); if(o.t && (Date.now()-o.t>14*864e5)) return {}; return o; }catch(e){ return {}; } }
+function setSeen(k){ try{ var o=getSeen(); o[k]=1; o.t=Date.now(); localStorage.setItem(SEEN_KEY,JSON.stringify(o)); }catch(e){} }
+var seen=getSeen();
+
+// RENDER SERVICES
+function renderServices(){
+  var list=document.getElementById('svcList'); list.innerHTML='';
+  for(var i=0;i<SERVICES.length;i++){
+    var s=SERVICES[i];
+    var name=lang==='eng'?s.nameEn:s.nameRu;
+    var desc=lang==='eng'?s.descEn:s.descRu;
+    var div=document.createElement('div'); div.className='svc-item';
+    div.innerHTML='<div class="svc-item-name">'+name+'</div><div class="svc-item-desc">'+desc+'</div><div class="svc-item-meta"><div class="svc-item-price">'+L[lang].svcPrice+'</div></div>';
+    list.appendChild(div);
+  }
+}
+
+// FILL QUOTE FORM SELECTS
+function fillQuoteSelects(){
+  var sel=document.getElementById('qService'); sel.innerHTML='';
+  for(var i=0;i<SERVICES.length;i++){ var o=document.createElement('option'); o.value=SERVICES[i].nameEn; o.textContent=(lang==='eng'?SERVICES[i].nameEn:SERVICES[i].nameRu); sel.appendChild(o); }
+  var tl=document.getElementById('qTimeline'); tl.innerHTML='';
+  var arr=L[lang].timelines;
+  for(var j=0;j<arr.length;j++){ var o2=document.createElement('option'); o2.value=arr[j]; o2.textContent=arr[j]; tl.appendChild(o2); }
+}
+
+// APPLY LANGUAGE
+function applyLang(){
+  var lb=L[lang];
+  document.getElementById('fname').textContent=lb.fname;
+  document.getElementById('ftitle').textContent=lb.ftitle;
+  document.getElementById('ftl').innerHTML=lb.ftl;
+  document.getElementById('ftr').innerHTML=lb.ftr;
+  document.getElementById('fbl').textContent=lb.fbl;
+  document.getElementById('fbr').textContent=lb.fbr;
+  document.getElementById('btagline').textContent=lb.btagline;
+  document.getElementById('m1').textContent=lb.m1;
+  document.getElementById('m2').textContent=lb.m2;
+  document.getElementById('m3').textContent=lb.m3;
+  document.getElementById('langText').textContent=lb.lang;
+  var lt2=document.getElementById('langText2'); if(lt2) lt2.textContent=lb.lang;
+  document.getElementById('statusLabel').textContent=lb[status];
+  document.getElementById('svcTitle').textContent=lb.svcTitle;
+  document.getElementById('svcSubtitle').textContent=lb.svcSubtitle;
+  document.getElementById('svcBackText').textContent=lb.svcBack;
+  document.getElementById('svcQuoteText').textContent=lb.svcQuote;
+  document.getElementById('svcContactText').textContent=lb.svcContact;
+  document.getElementById('svcFooter').textContent=lb.svcFooter;
+  document.getElementById('qTitle').textContent=lb.qTitle;
+  document.getElementById('qSub').textContent=lb.qSub;
+  document.getElementById('qServiceLabel').textContent=lb.qServiceLabel;
+  document.getElementById('qTimelineLabel').textContent=lb.qTimelineLabel;
+  document.getElementById('qBudgetLabel').textContent=lb.qBudgetLabel;
+  document.getElementById('qDescLabel').textContent=lb.qDescLabel;
+  document.getElementById('qCancel').textContent=lb.qCancel;
+  document.getElementById('qSend').textContent=lb.qSend;
+  document.getElementById('qNote').textContent=lb.qNote;
+  document.getElementById('qBudget').placeholder=lb.qBudgetPlaceholder;
+  document.getElementById('qDesc').placeholder=lb.qDescPlaceholder;
+  renderServices(); fillQuoteSelects();
+  if(currentPage==='card'){ updateHint(); }
+}
+
+// HINT LOGIC
+var hintTimer=null;
+function updateHint(){
+  if(hintTimer){ clearTimeout(hintTimer); hintTimer=null; }
+  if(currentPage!=='card'){ hintEl.style.display='none'; return; }
+  hintEl.style.display='block';
+  if(!flipped){
+    if(seen.flip){ hintEl.style.opacity=0; return; }
+    hintEl.textContent=L[lang].hint1;
+    blinkHint();
+  } else {
+    if(seen.lang){ hintEl.style.opacity=0; return; }
+    hintEl.textContent=L[lang].hintLang;
+    blinkHint();
+  }
+}
+function blinkHint(){
+  hintEl.style.transition='opacity .6s ease'; hintEl.style.opacity=1;
+  function loop(){
+    if((!flipped&&seen.flip)||(flipped&&seen.lang)||currentPage!=='card'){ hintEl.style.opacity=0; return; }
+    hintEl.style.opacity=0.25;
+    hintTimer=setTimeout(function(){ hintEl.style.opacity=1; hintTimer=setTimeout(loop,2200); },900);
+  }
+  hintTimer=setTimeout(loop,1400);
+}
+
+// CARD FLIP
+function flipCard(){
+  if(currentPage!=='card') return;
+  flipped=!flipped;
+  document.getElementById('cardWrap').classList.toggle('flipped',flipped);
+  haptic('light');
+  if(flipped && !seen.flip){ seen.flip=1; setSeen('flip'); }
+  updateHint();
+}
+
+// LANG TOGGLE
+function toggleLang(e){
+  e.stopPropagation(); e.currentTarget.blur();
+  lang=lang==='eng'?'rus':'eng';
+  haptic('select');
+  if(!seen.lang){ seen.lang=1; setSeen('lang'); }
+  applyLang();
+}
+
+// STATUS
+function applyStatus(s){
+  status=s;
+  var dot=document.getElementById('statusDot'), lbl=document.getElementById('statusLabel');
+  dot.classList.remove('online','offline'); lbl.classList.remove('online','offline');
+  dot.classList.add(s); lbl.classList.add(s); lbl.textContent=L[lang][s];
+}
+function onStatusClick(e){
+  e.stopPropagation();
+  if(!isAdmin) return;           // обычный юзер — клик игнорируется
+  e.currentTarget.blur();
+  haptic('medium');
+  applyStatus(status==='online'?'offline':'online');
+  // (на этапе бэкенда тут будет запись статуса для всех)
+}
+function fetchStatus(){
+  if(!STATUS_URL) return;
+  fetch(STATUS_URL+'?t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(d&&d.status)applyStatus(d.status)}).catch(function(){});
+}
+if(STATUS_URL){ fetchStatus(); setInterval(fetchStatus,30000); }
+
+// NAVIGATION
+function openSection(name,e){
+  e.stopPropagation(); haptic('light');
+  if(name==='reviews'){ openLink(LINKS.reviews); }
+  else if(name==='ledger'){ openLink(LINKS.ledger); }
+  else if(name==='services'){ showPage('services'); }
+}
+function openLink(url){
+  if(tg){ tg.openTelegramLink(url); } else { window.open(url,'_blank'); }
+}
+function showPage(name){
+  currentPage=name;
+  document.getElementById('page-card').classList.toggle('hidden',name!=='card');
+  document.getElementById('page-services').classList.toggle('hidden',name!=='services');
+  if(tg){ tg.BackButton[name==='card'?'hide':'show'](); }
+  window.scrollTo(0,0);
+  updateHint();
+}
+function goBack(){ haptic('light'); showPage('card'); }
+if(tg){ tg.BackButton.onClick(goBack); }
+
+// CONTACT
+document.getElementById('svcContact').addEventListener('click',function(e){ e.preventDefault(); haptic('light'); openLink(LINKS.contact); });
+
+// QUOTE MODAL
+var quoteModal=document.getElementById('quoteModal');
+document.getElementById('svcQuote').addEventListener('click',function(e){ e.preventDefault(); openQuote(); });
+function openQuote(){ haptic('light'); fillQuoteSelects(); quoteModal.classList.add('open'); }
+function closeQuote(){ haptic('light'); quoteModal.classList.remove('open'); }
+quoteModal.addEventListener('click',function(e){ if(e.target===quoteModal) closeQuote(); });
+
+function sendQuote(){
+  var svcVal=document.getElementById('qService').value;
+  var timeline=document.getElementById('qTimeline').value;
+  var budget=document.getElementById('qBudget').value.trim();
+  var desc=document.getElementById('qDesc').value.trim();
+
+  // АВТО-ЯЗЫК: если в описании или бюджете есть кириллица — бриф на русском.
+  // если только латиница (нет кириллицы) — бриф на английском.
+  // если поля пустые — берём язык визитки.
+  var userText = desc + ' ' + budget;
+  var hasCyr = /[а-яёА-ЯЁ]/.test(userText);
+  var hasLat = /[a-zA-Z]/.test(userText);
+  var briefLang;
+  if(hasCyr) briefLang='rus';
+  else if(hasLat) briefLang='eng';
+  else briefLang=lang;            // нет текста → язык визитки
+
+  var lb=L[briefLang];
+
+  // Имя услуги на языке брифа (или Other)
+  var svcDisplay;
+  if(svcVal==='__OTHER__'){ svcDisplay=lb.otherOption; }
+  else {
+    svcDisplay=svcVal;
+    for(var i=0;i<SERVICES.length;i++){ if(SERVICES[i].nameEn===svcVal){ svcDisplay=(briefLang==='eng'?SERVICES[i].nameEn:SERVICES[i].nameRu); break; } }
+  }
+
+  // Таймлайн на языке брифа (перевод по индексу)
+  var tlIndex = L[lang].timelines.indexOf(timeline);
+  var timelineDisplay = (tlIndex!==-1) ? L[briefLang].timelines[tlIndex] : timeline;
+
+  var budgetOut = budget || '—';
+  var descOut = desc || '—';
+
+  var brief='◆ '+lb.briefHeader+' ◆\n'+
+            lb.briefService+': '+svcDisplay+'\n'+
+            lb.briefTimeline+': '+timelineDisplay+'\n'+
+            lb.briefBudget+': '+budgetOut+'\n'+
+            lb.briefDesc+': '+descOut;
+
+  copyText(brief);
+  haptic('medium');
+  showToast(lb.copiedShort);          // видимое уведомление и на ПК, и на телефоне
+  closeQuote();
+  setTimeout(function(){ openLink(LINKS.contact); }, 1100);
+}
+function copyText(t){
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t); return; }
+  }catch(e){}
+  try{
+    var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+  }catch(e){}
+}
+
+// TOAST — visible on PC and mobile
+var toastTimer=null;
+function showToast(msg){
+  var t=document.getElementById('toast');
+  document.getElementById('toastText').textContent=msg;
+  t.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ t.classList.remove('show'); }, 2600);
+}
+
+// INTRO REVEAL (once per session)
+function runIntro(){
+  var wrap=document.getElementById('cardWrap');
+  // already seen intro this session? skip
+  if(sessionStorage.getItem('bl_intro')){ wrap.classList.remove('intro'); wrap.classList.add('intro-done'); return; }
+  setTimeout(function(){
+    wrap.classList.add('intro-done');
+    wrap.classList.remove('intro');
+    sessionStorage.setItem('bl_intro','1');
+  }, 250);
+}
+
+// ADMIN UI
+if(isAdmin){
+  document.getElementById('statusBtn').classList.add('admin');
+}
+
+// INIT
+applyStatus('online');
+applyLang();
+runIntro();
+updateHint();
+</script>
+</body>
+</html>
